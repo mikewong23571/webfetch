@@ -1,0 +1,14 @@
+{
+  "name": "webfetch-monorepo",
+  "private": true,
+  "packageManager": "pnpm@8.15.5",
+  "workspaces": [
+    "server",
+    "client",
+    "tests"
+  ],
+  "devDependencies": {
+    "ajv-cli": "^5.0.0",
+    "ajv-formats": "^3.0.1"
+  }
+}
