@@ -1,0 +1,4 @@
+name = "server"
+node_compat = true
+main = "src/index.ts"
+compatibility_date = "2025-07-31"

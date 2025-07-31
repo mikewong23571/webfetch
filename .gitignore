@@ -1,0 +1,19 @@
+node_modules
+.pnpm
+.DS_Store
+
+# Output directories
+server/dist
+client/dist
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Testing coverage
+coverage
+
+# Env files
+.env
+
