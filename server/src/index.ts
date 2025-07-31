@@ -1,6 +1,11 @@
 import { sha256 } from './util';
 import validateImport from './compiled-schema';
-const validate: (data: unknown) => boolean & {errors?: any} =
+import { renderMarkdown } from './renderer';
+import { extract } from './extractor';
+import { chunkText } from './chunker';
+import { NFError, toResponse } from './errors';
+import { NF_ERROR_CODE } from '../error-codes';
+const validate: (data: unknown) => boolean & { errors?: any } =
   (validateImport as any).default || (validateImport as any);
 
 interface FetchOptions {
@@ -17,6 +22,8 @@ interface FetchRequest {
 
 interface Env {}
 
+const SYS_PROMPT = 'Fetch • Clean • Chunk at the edge.';
+
 export default {
   async fetch(req: Request, _env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(req.url);
@@ -28,10 +35,7 @@ export default {
     try {
       body = await req.json();
     } catch {
-      return new Response(JSON.stringify({ error: { message: 'Invalid JSON' } }), {
-        status: 400,
-        headers: { 'content-type': 'application/json' },
-      });
+      return toResponse(new NFError(NF_ERROR_CODE.BAD_URL, 'Invalid JSON'));
     }
 
     if (!validate(body)) {
@@ -51,22 +55,33 @@ export default {
       return cached;
     }
 
-    // Placeholder payload until renderer implemented
-    const payload = {
-      title: '',
-      chunks: [],
-      meta: { fetched_at: new Date().toISOString(), render_strategy: 'markdown' },
-    };
-    const response = new Response(JSON.stringify(payload), {
-      headers: { 'content-type': 'application/json' },
-    });
-
-    ctx.waitUntil(
-      cache.put(cacheUrl.toString(), response.clone(), {
-        expirationTtl: 43200,
-      }),
-    );
-
-    return response;
+    try {
+      const html = await renderMarkdown(input.url, input.options?.wait_until || 'load');
+      const article = extract(html, input.url);
+      const chunks = chunkText(article.text, input.options?.max_tokens || 32768).map(c => ({
+        seq: c.seq,
+        text: `${SYS_PROMPT}\n${input.prompt || ''}\n${c.text}`,
+      }));
+      const payload = {
+        title: article.title,
+        chunks,
+        meta: { fetched_at: new Date().toISOString(), render_strategy: 'markdown' },
+      };
+      const response = new Response(JSON.stringify(payload), {
+        headers: { 'content-type': 'application/json' },
+      });
+      ctx.waitUntil(
+        cache.put(cacheUrl.toString(), response.clone(), {
+          expirationTtl: 43200,
+        }),
+      );
+      console.log(JSON.stringify({ tag: '[NF]', cache: 'miss' }));
+      return response;
+    } catch (e: any) {
+      if (e instanceof NFError) {
+        return toResponse(e);
+      }
+      return toResponse(new NFError(NF_ERROR_CODE.RENDER_FAIL, e.message));
+    }
   },
 };
